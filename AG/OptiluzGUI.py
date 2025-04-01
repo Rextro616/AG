@@ -6,10 +6,6 @@ from OptiluzGA import OptiluzGA
 from OptiluzInput import OptiluzInput
 
 class OptiluzGUI(tk.Tk):
-    """
-    Interfaz gráfica mejorada para ingresar los datos de entrada de OptiLuz,
-    ejecutar el algoritmo genético y mostrar los resultados y gráficas.
-    """
     def __init__(self):
         super().__init__()
         self.title("OptiLuz - Optimización de Consumo Energético")
@@ -123,7 +119,7 @@ class OptiluzGUI(tk.Tk):
         # Campos de factores térmicos
         termica_campos = [
             ("Temperatura Exterior (°C):", "temp_ext", "30"),
-            ("Temperatura Interior Deseada (°C):", "temp_int", "22"),
+            ("Temperatura Interior Deseada (°C):", "temp_int", "18"),
             ("Humedad Relativa (%):", "humedad", "60"),
             ("Carga Térmica (W) por Equipos:", "carga", "5000")
         ]
@@ -269,12 +265,14 @@ class OptiluzGUI(tk.Tk):
         self.luminosidad_tab = ttk.Frame(self.graphs_container)
         self.temperatura_tab = ttk.Frame(self.graphs_container)
         self.espacio_tab = ttk.Frame(self.graphs_container)
+        self.temp_aula_tab = ttk.Frame(self.graphs_container)  # Nueva pestaña para temperatura del aula
         
         self.graphs_container.add(self.fitness_tab, text="Evolución Fitness")
         self.graphs_container.add(self.comparison_tab, text="Comparación Consumo")
         self.graphs_container.add(self.luminosidad_tab, text="Luminosidad")
         self.graphs_container.add(self.temperatura_tab, text="Temperatura")
         self.graphs_container.add(self.espacio_tab, text="Espacio/Persona")
+        self.graphs_container.add(self.temp_aula_tab, text="Temperatura Aula")  # Añadir nueva pestaña
         
         # Botón para guardar resultados
         btn_frame = ttk.Frame(results_container)
@@ -446,6 +444,7 @@ class OptiluzGUI(tk.Tk):
         original_plot_luminosidad = ga.plot_luminosidad
         original_plot_temperatura = ga.plot_temperatura
         original_plot_espacio_persona = ga.plot_espacio_persona
+        original_plot_avg_temperature = ga.plot_avg_temperature
         
         # Variables para guardar las figuras
         self.fitness_fig = None
@@ -453,6 +452,7 @@ class OptiluzGUI(tk.Tk):
         self.luminosidad_fig = None
         self.temperatura_fig = None
         self.espacio_fig = None
+        self.temp_aula_fig = None
         
         # Redefinir plot_fitness
         def captured_plot_fitness():
@@ -514,6 +514,61 @@ class OptiluzGUI(tk.Tk):
             plt.ylabel("m²/persona")
             plt.grid(True)
             plt.close()  # No mostrar, solo guardar la figura
+            
+        # Redefinir plot_avg_temperature
+        def captured_plot_avg_temperature():
+            try:
+                self.temp_aula_fig = plt.figure(figsize=(8, 5))
+                
+                # Asegurarnos de que temperature_history tiene datos
+                if not hasattr(ga, 'temperature_history') or not ga.temperature_history:
+                    # Crear un historial de temperaturas basado en el historial de soluciones
+                    temps = []
+                    for sol in ga.best_solution_history:
+                        temp = ga.calculate_avg_temperature(sol)
+                        temps.append(temp)
+                    
+                    generaciones = range(len(temps))
+                    plt.plot(generaciones, temps, marker='o', linestyle='-', color='#FF7043')
+                    
+                    # Añadir temperatura final
+                    if temps:
+                        plt.axhline(y=temps[-1], color='red', linestyle='--', 
+                                label=f'Temperatura final: {temps[-1]:.2f} °C')
+                else:
+                    # Usar el historial existente
+                    generaciones = range(len(ga.temperature_history))
+                    plt.plot(generaciones, ga.temperature_history, marker='o', linestyle='-', color='#FF7043')
+                    
+                    # Añadir valor óptimo final
+                    if ga.temperature_history:
+                        plt.axhline(y=ga.temperature_history[-1], color='red', linestyle='--', 
+                                label=f'Temperatura final: {ga.temperature_history[-1]:.2f} °C')
+                
+                # Añadir temperatura deseada como referencia
+                plt.axhline(y=ga.input_data.temp_int, color='blue', linestyle=':', 
+                        label=f'Temperatura deseada: {ga.input_data.temp_int:.1f} °C')
+                
+                # Añadir zona de confort térmico (±2°C de la temperatura deseada)
+                plt.axhspan(
+                    ga.input_data.temp_int - 2, 
+                    ga.input_data.temp_int + 2, 
+                    alpha=0.2, color='green', 
+                    label='Zona de confort (±2°C)'
+                )
+                
+                plt.title("Evolución de la Temperatura Promedio del Aula")
+                plt.xlabel("Generaciones")
+                plt.ylabel("Temperatura (°C)")
+                plt.legend()
+                plt.grid(True)
+                plt.close()  # No mostrar, solo guardar la figura
+            except Exception as e:
+                # En caso de error, crear una gráfica simple con mensaje de error
+                self.temp_aula_fig = plt.figure(figsize=(8, 5))
+                plt.text(0.5, 0.5, f"Error al generar gráfica: {str(e)}", 
+                        ha='center', va='center', transform=plt.gca().transAxes)
+                plt.close()
         
         # Asignar las nuevas funciones
         ga.plot_fitness = captured_plot_fitness
@@ -521,6 +576,7 @@ class OptiluzGUI(tk.Tk):
         ga.plot_luminosidad = captured_plot_luminosidad
         ga.plot_temperatura = captured_plot_temperatura
         ga.plot_espacio_persona = captured_plot_espacio_persona
+        ga.plot_avg_temperature = captured_plot_avg_temperature
         
         # Ejecutar el algoritmo genético
         ga.run_evolution(generations=generations, mutation_rate=mutation_rate)
@@ -531,6 +587,7 @@ class OptiluzGUI(tk.Tk):
         ga.plot_luminosidad = original_plot_luminosidad
         ga.plot_temperatura = original_plot_temperatura
         ga.plot_espacio_persona = original_plot_espacio_persona
+        ga.plot_avg_temperature = original_plot_avg_temperature
         
         # Mostrar los resultados en el área de texto
         self.display_text_results(ga)
@@ -543,40 +600,64 @@ class OptiluzGUI(tk.Tk):
         self.results_text.config(state=tk.NORMAL)
         self.results_text.delete(1.0, tk.END)
         
-        # Calcular resultados
-        consumo_antes = ga.input_data.carga + ga.input_data.lamparas * ga.input_data.potencia_lampara
-        consumo_despues = (ga.best_solution['BTU'] / 1000) + ga.best_solution['P_luz'] / 10
+        try:
+            # Calcular resultados
+            consumo_antes = ga.input_data.carga + ga.input_data.lamparas * ga.input_data.potencia_lampara
+            consumo_despues = (ga.best_solution['BTU'] / 1000) + ga.best_solution['P_luz'] / 10
+            
+            if ga.input_data.superficie != 0:
+                personas_por_m2 = ga.best_solution['N_personas'] / ga.input_data.superficie
+            else:
+                personas_por_m2 = 0
+                
+            # Calcular la temperatura promedio del aula con manejo de errores
+            try:
+                if 'temp_promedio' in ga.best_solution:
+                    temp_promedio = ga.best_solution['temp_promedio']
+                else:
+                    temp_promedio = ga.calculate_avg_temperature(ga.best_solution)
+            except Exception as e:
+                temp_promedio = 0.0
+                print(f"Error al calcular temperatura: {e}")
+            
+            # Formatear resultados
+            results_text = f"""📊 RESULTADOS OPTIMIZADOS:
+
+    Capacidad Óptima del Aire Acondicionado: {ga.best_solution['BTU']:.2f} BTU
+    Tipo de Aire Acondicionado Recomendado: {ga.get_AC_type(ga.best_solution['BTU'])}
+    Potencia de Iluminación Recomendada: {ga.best_solution['P_luz']:.2f} W
+    Nivel Óptimo de Aislamiento Térmico (U): {ga.best_solution['U']:.2f}
+    Cantidad Recomendada de Personas por Aula: {ga.best_solution['N_personas']}
+    Cantidad de personas por m²: {personas_por_m2:.2f}
+
+    Consumo Base: {consumo_antes:.2f} kWh
+    Consumo Óptimo: {consumo_despues:.2f} kWh
+    Ahorro Energético: {consumo_antes - consumo_despues:.2f} kWh ({(1 - consumo_despues/consumo_antes) * 100:.1f}%)
+    """
+
+            # Agregar información de temperatura solo si está disponible
+            if temp_promedio > 0:
+                results_text += f"""
+    Temperatura Promedio del Aula: {temp_promedio:.1f} °C
+    (Temperatura deseada: {ga.input_data.temp_int:.1f} °C)
+    """
+            
+            results_text += f"""
+    Mejor Fitness alcanzado: {ga.best_fitness:.2f}
+    """
+            
+            self.results_text.insert(tk.END, results_text)
+        except Exception as e:
+            error_msg = f"Error al mostrar resultados: {str(e)}"
+            self.results_text.insert(tk.END, error_msg)
+            print(error_msg)
         
-        if ga.input_data.superficie != 0:
-            personas_por_m2 = ga.best_solution['N_personas'] / ga.input_data.superficie
-        else:
-            personas_por_m2 = 0
-        
-        # Formatear resultados
-        results_text = f"""RESULTADOS OPTIMIZADOS:
-
-Capacidad Óptima del Aire Acondicionado: {ga.best_solution['BTU']:.2f} BTU
-Tipo de Aire Acondicionado Recomendado: {ga.get_AC_type(ga.best_solution['BTU'])}
-Potencia de Iluminación Recomendada: {ga.best_solution['P_luz']:.2f} W
-Nivel Óptimo de Aislamiento Térmico (U): {ga.best_solution['U']:.2f}
-Cantidad Recomendada de Personas por Aula: {
-    ga.best_solution['N_personas']}
-Cantidad de personas por m²: {personas_por_m2:.2f}
-
--Consumo Base: {consumo_antes:.2f} kWh
--Consumo Óptimo: {consumo_despues:.2f} kWh
--Ahorro Energético: {consumo_antes - consumo_despues:.2f} kWh ({(1 - consumo_despues/consumo_antes) * 100:.1f}%)
-
-Mejor Fitness alcanzado: {ga.best_fitness:.2f}
-"""
-        self.results_text.insert(tk.END, results_text)
         self.results_text.config(state=tk.DISABLED)
-
     def display_captured_plots(self):
         """Muestra las gráficas capturadas en sus respectivas pestañas"""
         # Limpiar contenido anterior
         for tab in [self.fitness_tab, self.comparison_tab, self.luminosidad_tab, 
-                   self.temperatura_tab, self.espacio_tab]:
+                   self.temperatura_tab, self.espacio_tab, self.temp_aula_tab]:
             for widget in tab.winfo_children():
                 widget.destroy()
         
@@ -607,6 +688,11 @@ Mejor Fitness alcanzado: {ga.best_fitness:.2f}
         # Mostrar gráfica de espacio por persona
         if self.espacio_fig:
             canvas = FigureCanvasTkAgg(self.espacio_fig, self.espacio_tab)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            
+        if self.temp_aula_fig:
+            canvas = FigureCanvasTkAgg(self.temp_aula_fig, self.temp_aula_tab)
             canvas.draw()
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 

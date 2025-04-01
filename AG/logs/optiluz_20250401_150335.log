@@ -1,0 +1,16 @@
+2025-04-01 15:03:35,179 - OptiLuz - INFO - Iniciando OptiLuz
+2025-04-01 15:03:35,512 - OptiLuz - ERROR - Error no manejado: '_tkinter.tkapp' object has no attribute 'save_results'
+2025-04-01 15:03:35,516 - OptiLuz - ERROR - Traceback (most recent call last):
+  File "/Users/rextro/Documents/8vo/IA/C3/AG/AG/main.py", line 56, in main
+    app = OptiluzGUI()
+          ^^^^^^^^^^^^
+  File "/Users/rextro/Documents/8vo/IA/C3/AG/AG/OptiluzGUI.py", line 42, in __init__
+    self.create_results_area()
+  File "/Users/rextro/Documents/8vo/IA/C3/AG/AG/OptiluzGUI.py", line 286, in create_results_area
+    btn_frame, text="Guardar Resultados", command=self.save_results, width=20)
+                                                  ^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 2430, in __getattr__
+    return getattr(self.tk, attr)
+           ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: '_tkinter.tkapp' object has no attribute 'save_results'
+

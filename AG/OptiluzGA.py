@@ -4,10 +4,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 class OptiluzGA:
-    """
-    Clase mejorada que maneja el algoritmo genético para OptiLuz.
-    Incluye elitismo, mejores métodos de selección y visualizaciones mejoradas.
-    """
     def __init__(self, input_data, pop_size=20):
         self.input_data = input_data
         self.pop_size = pop_size
@@ -16,6 +12,7 @@ class OptiluzGA:
         self.best_solution = None
         self.best_fitness = float('inf')
         self.best_solution_history = []  # Para guardar el mejor individuo de cada generación
+        self.temperature_history = []    # Para guardar la temperatura promedio en cada generación
         
         # Definir rangos para cada variable optimizable (con límites más precisos)
         self.bounds = {
@@ -33,6 +30,10 @@ class OptiluzGA:
         self.PERSON_FACTOR = 600     # Factor asociado a la cantidad de personas para BTU
         self.EQUIP_FACTOR = 300      # Factor asociado a la carga térmica de equipos
         self.WINDOW_AREA = 1.5       # Área promedio de cada ventana (m²)
+        
+        # Constantes para el cálculo de temperatura
+        self.CALOR_PERSONA = 100     # Watts por persona
+        self.EFICIENCIA_AC = 0.8     # Eficiencia típica de un aire acondicionado
     
     def _adjust_bounds(self):
         """Ajusta los límites de las variables según las entradas"""
@@ -50,6 +51,74 @@ class OptiluzGA:
         min_personas = max(5, self.input_data.superficie / 4)
         max_personas = min(100, self.input_data.superficie / 1.5)
         self.bounds['N_personas'] = (int(min_personas), int(max_personas))
+        
+    def calculate_avg_temperature(self, individual):
+        """
+        Calcula la temperatura promedio del aula basada en los parámetros del individuo
+        y las condiciones del entorno.
+        
+        Esta es una simulación simplificada que considera:
+        - Transferencia de calor a través de ventanas (U)
+        - Capacidad de enfriamiento del aire acondicionado (BTU)
+        - Calor generado por personas
+        - Calor generado por equipos y luces
+        - Temperatura exterior
+        """
+        # Extraer parámetros necesarios
+        BTU = individual['BTU']
+        U = individual['U']
+        N_personas = individual['N_personas']
+        P_luz = individual['P_luz']
+        
+        # Parámetros del aula
+        A_aula = self.input_data.superficie
+        ventanas = self.input_data.ventanas
+        carga_equipos = self.input_data.carga
+        temp_ext = self.input_data.temp_ext
+        temp_int_deseada = self.input_data.temp_int
+        
+        # Área de ventanas
+        A_ventanas = ventanas * self.WINDOW_AREA
+        
+        # Calor que entra/sale por las ventanas (W)
+        # Positivo si entra calor, negativo si sale
+        Q_ventanas = U * A_ventanas * (temp_ext - temp_int_deseada)
+        
+        # Calor generado por personas (W)
+        Q_personas = N_personas * self.CALOR_PERSONA
+        
+        # Calor generado por equipos y luces (W)
+        Q_equipos = carga_equipos
+        Q_luces = P_luz
+        
+        # Calor total generado/transferido sin considerar el AC (W)
+        Q_total = Q_ventanas + Q_personas + Q_equipos + Q_luces
+        
+        # Capacidad de enfriamiento del AC en W (1 BTU/h ≈ 0.293 W)
+        Q_ac = BTU * 0.293 * self.EFICIENCIA_AC
+        
+        # Balance de calor (W)
+        # Si es positivo, la temperatura subirá; si es negativo, bajará
+        Q_balance = Q_total - Q_ac
+        
+        # Estimación de la temperatura resultante
+        # Usamos una aproximación: cada 100W de exceso incrementa la temperatura 1°C
+        # desde la temperatura deseada
+        delta_T = Q_balance / 100
+        
+        # Temperatura promedio resultante
+        temp_promedio = temp_int_deseada + delta_T
+        
+        # Limitar a un rango razonable (no puede alejarse demasiado de la temperatura exterior)
+        # en caso de valores extremos
+        if abs(temp_promedio - temp_ext) > 15:
+            # La diferencia no debería ser mayor a 15°C en condiciones normales
+            if temp_promedio > temp_ext:
+                temp_promedio = temp_ext + 15
+            else:
+                temp_promedio = temp_ext - 15
+                
+        return temp_promedio
     
     def initialize_population(self):
         """Inicializa la población con valores aleatorios dentro de los límites definidos."""
@@ -148,15 +217,20 @@ class OptiluzGA:
         # Encontrar el mejor individuo de esta generación
         min_fitness = min(fitness_values)
         best_idx = fitness_values.index(min_fitness)
+        best_ind = self.population[best_idx]
         
         # Actualizar el mejor global si es mejor que el anterior
         if min_fitness < self.best_fitness:
-            self.best_solution = self.population[best_idx].copy()
+            self.best_solution = best_ind.copy()
             self.best_fitness = min_fitness
         
         # Guardar el mejor de esta generación para el historial
-        self.best_solution_history.append(self.population[best_idx].copy())
+        self.best_solution_history.append(best_ind.copy())
         self.fitness_history.append(min_fitness)
+        
+        # Calcular y guardar la temperatura promedio del mejor individuo de esta generación
+        best_temp = self.calculate_avg_temperature(best_ind)
+        self.temperature_history.append(best_temp)
         
         return fitness_values
     
@@ -353,7 +427,7 @@ class OptiluzGA:
     
     def display_results(self):
         """Muestra los resultados finales y genera visualizaciones."""
-        print("\n📊 RESULTADOS OPTIMIZADOS:")
+        print("\n RESULTADOS OPTIMIZADOS:")
         print(f"Capacidad Óptima del Aire Acondicionado: {self.best_solution['BTU']:.2f} BTU")
         print(f"Tipo de Aire Acondicionado Recomendado: {self.get_AC_type(self.best_solution['BTU'])}")
         print(f"Potencia de Iluminación Recomendada: {self.best_solution['P_luz']:.2f} W")
@@ -378,6 +452,20 @@ class OptiluzGA:
         print(f"⚡ Consumo Base: {consumo_antes:.2f} kWh")
         print(f"⚡ Consumo Óptimo: {consumo_despues:.2f} kWh")
         print(f"📉 Ahorro Energético: {consumo_antes - consumo_despues:.2f} kWh ({(1 - consumo_despues/consumo_antes) * 100:.1f}%)\n")
+        
+        # Calcular y mostrar la temperatura promedio esperada
+        temp_promedio = self.calculate_avg_temperature(self.best_solution)
+        print(f"🌡️ Temperatura Promedio del Aula: {temp_promedio:.1f} °C")
+        print(f"   (Temperatura deseada: {self.input_data.temp_int:.1f} °C)")
+        
+        if abs(temp_promedio - self.input_data.temp_int) > 2:
+            print("   La temperatura promedio difiere significativamente de la deseada.")
+            if temp_promedio > self.input_data.temp_int:
+                print("   Se recomienda aumentar la capacidad del aire acondicionado o reducir la carga térmica.")
+            else:
+                print("   El aire acondicionado puede estar sobredimensionado para las condiciones del aula.")
+        else:
+            print("   La temperatura promedio se mantiene cerca de la temperatura deseada.")
 
         # Generar gráficos
         self.plot_fitness()
@@ -385,6 +473,7 @@ class OptiluzGA:
         self.plot_luminosidad()
         self.plot_temperatura()
         self.plot_espacio_persona()
+        self.plot_avg_temperature()
 
     def get_AC_type(self, BTU):
         """Determina el tipo de aire acondicionado recomendado según el BTU."""
@@ -537,6 +626,43 @@ class OptiluzGA:
         plt.grid(True)
         plt.tight_layout()
         plt.show()
+    
+    def plot_avg_temperature(self):
+        """
+        Genera un gráfico mostrando la evolución de la temperatura promedio
+        del aula a lo largo de las generaciones.
+        """
+        if not self.temperature_history:
+            return
+            
+        generaciones = range(len(self.temperature_history))
+        
+        plt.figure(figsize=(10, 6))
+        plt.plot(generaciones, self.temperature_history, marker='o', linestyle='-', color='#FF7043')
+        
+        # Añadir valor óptimo final
+        plt.axhline(y=self.temperature_history[-1], color='red', linestyle='--', 
+                   label=f'Temperatura final: {self.temperature_history[-1]:.2f} °C')
+        
+        # Añadir temperatura deseada como referencia
+        plt.axhline(y=self.input_data.temp_int, color='blue', linestyle=':', 
+                   label=f'Temperatura deseada: {self.input_data.temp_int:.1f} °C')
+        
+        # Añadir zona de confort térmico (±2°C de la temperatura deseada)
+        plt.axhspan(
+            self.input_data.temp_int - 2, 
+            self.input_data.temp_int + 2, 
+            alpha=0.2, color='green', 
+            label='Zona de confort (±2°C)'
+        )
+        
+        plt.title("Evolución de la Temperatura Promedio del Aula")
+        plt.xlabel("Generaciones")
+        plt.ylabel("Temperatura (°C)")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
         
     def print_population(self):
         """Imprime la población actual y sus valores de fitness."""
@@ -548,4 +674,5 @@ class OptiluzGA:
             ind = self.population[idx]
             fit = fitness_values[idx]
             print(f"Individuo {idx+1}: BTU={ind['BTU']:.1f}, P_luz={ind['P_luz']:.1f}, "
-                 f"U={ind['U']:.2f}, N_personas={ind['N_personas']} | Fitness: {fit:.4f}")
+                 f"U={ind['U']:.2f}, N_personas={ind['N_personas']} | "
+                 f"Fitness: {fit:.4f} | Temp: {ind['temp_promedio']:.1f}°C")
